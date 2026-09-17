@@ -1,5 +1,5 @@
 {
-  "_comment": "Defaults used when a column is missing or empty in the spreadsheet. Edit to match your department.",
+  "_comment": "Defaults used when a column is missing or empty in the CSV. Edit to match your department.",
 
   "issuer_name": "",
   "issuer_position": "IT Specialist",

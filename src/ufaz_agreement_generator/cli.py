@@ -1,18 +1,17 @@
-#!/usr/bin/env python3
 """
 UFAZ IT — Device Issuance Agreement generator
 =============================================
 
-Reads receivers from an Excel (.xlsx) or CSV file and produces one filled
-Device Issuance Agreement PDF per row, using the fillable PDF template.
+Reads receivers from a CSV file and produces one filled Device Issuance
+Agreement PDF per row, using the fillable PDF template bundled with the package.
 
 Usage
 -----
-    uv run generate_agreements.py receivers.xlsx
-    uv run generate_agreements.py receivers.csv -o output --lock
-    uv run generate_agreements.py receivers.xlsx --sheet "September" --config config.json
+    ufaz-agreement-generator receivers.csv
+    ufaz-agreement-generator receivers.csv -o output --lock
+    ufaz-agreement-generator receivers.csv --config config.json
 
-Run  uv run generate_agreements.py --help  for all options.
+Run  ufaz-agreement-generator --help  for all options.
 """
 from __future__ import annotations
 
@@ -106,11 +105,9 @@ def build_header_map(headers: list[str]) -> dict[str, str]:
 
 
 def fmt_date(v) -> str:
-    """Return a DD/MM/YYYY string for datetime/date objects; pass strings through."""
+    """Return a DD/MM/YYYY string for recognised date text; pass anything else through."""
     if v is None or v == "":
         return ""
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%d/%m/%Y")
     s = str(v).strip()
     for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d.%m.%Y", "%d/%m/%Y", "%m/%d/%Y"):
         try:
@@ -127,8 +124,6 @@ def is_yes(v) -> bool:
 def clean(v) -> str:
     if v is None:
         return ""
-    if isinstance(v, float) and v.is_integer():
-        v = int(v)
     return str(v).strip()
 
 
@@ -140,30 +135,20 @@ def safe_filename(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Reading input rows
 # ---------------------------------------------------------------------------
-def read_rows(path: Path, sheet: str | None) -> tuple[list[str], list[dict]]:
-    if path.suffix.lower() in (".xlsx", ".xlsm"):
-        from openpyxl import load_workbook
-        wb = load_workbook(path, data_only=True, read_only=True)
-        ws = wb[sheet] if sheet else wb.worksheets[0]
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            return [], []
-        headers = [clean(h) for h in rows[0]]
-        data = []
-        for r in rows[1:]:
-            if r is None or all(c in (None, "") for c in r):
-                continue
-            data.append({headers[i]: r[i] for i in range(min(len(headers), len(r))) if headers[i]})
-        return headers, data
-    elif path.suffix.lower() in (".csv", ".txt"):
-        with open(path, newline="", encoding="utf-8-sig") as f:
-            sample = f.read(4096); f.seek(0)
+def read_rows(path: Path) -> tuple[list[str], list[dict]]:
+    if path.suffix.lower() not in (".csv", ".txt"):
+        sys.exit(f"Unsupported input file type: {path.suffix} (use .csv)")
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        sample = f.read(4096); f.seek(0)
+        try:
             dialect = csv.Sniffer().sniff(sample, delimiters=",;\t") if sample.strip() else csv.excel
-            reader = csv.DictReader(f, dialect=dialect)
-            data = [r for r in reader if any((v or "").strip() for v in r.values())]
-            return reader.fieldnames or [], data
-    else:
-        sys.exit(f"Unsupported input file type: {path.suffix} (use .xlsx or .csv)")
+            delimiter = dialect.delimiter
+        except csv.Error:  # rows with uneven field counts confuse the sniffer; trust the header line
+            dialect, delimiter = csv.excel, max(",;\t", key=sample.split("\n", 1)[0].count)
+        reader = csv.DictReader(f, dialect=dialect, delimiter=delimiter)
+        headers = reader.fieldnames or []
+        data = [r for r in reader if any((r.get(h) or "").strip() for h in headers)]
+        return headers, data
 
 
 # ---------------------------------------------------------------------------
@@ -289,12 +274,12 @@ def fill_pdf(template: Path, values: dict, out_path: Path, lock: bool) -> None:
 # Main
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Generate filled UFAZ Device Issuance Agreements from a spreadsheet.")
-    ap.add_argument("input", type=Path, help="Excel (.xlsx) or CSV file — one receiver per row")
-    ap.add_argument("-o", "--output", type=Path, default=HERE / "output", help="output folder (default: ./output)")
-    ap.add_argument("-t", "--template", type=Path, default=DEFAULT_TEMPLATE, help="fillable PDF template")
-    ap.add_argument("-c", "--config", type=Path, default=DEFAULT_CONFIG, help="JSON with issuer defaults (default: ./config.json)")
-    ap.add_argument("--sheet", help="worksheet name (Excel only; default: first sheet)")
+    ap = argparse.ArgumentParser(description="Generate filled UFAZ Device Issuance Agreements from a CSV file.")
+    ap.add_argument("input", type=Path, help="CSV file — one receiver per row")
+    ap.add_argument("-o", "--output", type=Path, default=Path("output"), help="output folder (default: ./output)")
+    ap.add_argument("-t", "--template", type=Path, default=DEFAULT_TEMPLATE, help="fillable PDF template (default: the bundled one)")
+    ap.add_argument("-c", "--config", type=Path, default=None,
+                    help="JSON with issuer defaults (default: ./config.json if present, else the bundled one)")
     ap.add_argument("--lock", action="store_true", help="make the fields read-only in the generated PDFs")
     ap.add_argument("--start", type=int, default=None, help="first sequence number for auto-generated agreement numbers")
     ap.add_argument("--dry-run", action="store_true", help="show what would be generated without writing PDFs")
@@ -305,12 +290,13 @@ def main(argv=None) -> int:
     if not args.template.exists():
         sys.exit(f"Template not found: {args.template}")
 
-    cfg = {}
-    if args.config and args.config.exists():
-        cfg = json.loads(args.config.read_text(encoding="utf-8"))
+    config = args.config or (Path("config.json") if Path("config.json").exists() else DEFAULT_CONFIG)
+    if not config.exists():
+        sys.exit(f"Config not found: {config}")
+    cfg = json.loads(config.read_text(encoding="utf-8"))
     cfg["_seq_start"] = args.start if args.start is not None else cfg.get("agreement_no_start", 1)
 
-    headers, rows = read_rows(args.input, args.sheet)
+    headers, rows = read_rows(args.input)
     hmap = build_header_map(headers)
     if "receiver_name" not in hmap:
         sys.exit(f"Could not find a receiver-name column. Headers found: {headers}")

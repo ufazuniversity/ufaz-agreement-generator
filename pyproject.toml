@@ -1,14 +1,26 @@
 [project]
 name = "ufaz-agreement-generator"
 version = "0.1.0"
+description = "Generate filled UFAZ IT Device Issuance Agreement PDFs from a CSV of receivers."
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "openpyxl>=3.1",
     "pypdf>=3.17",
 ]
+
+[project.scripts]
+ufaz-agreement-generator = "ufaz_agreement_generator.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.18,<0.12.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 template = [
     "pillow>=11.3.0",
     "reportlab>=5.0.1",
 ]
+
+[tool.uv]
+# Rebuild on any package change, so `uvx --from <this folder>` never runs a stale cached copy.
+cache-keys = [{ file = "pyproject.toml" }, { file = "README.md" }, { file = "src/**/*" }]

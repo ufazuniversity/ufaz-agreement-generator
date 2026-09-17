@@ -4,3 +4,4 @@ __pycache__/
 
 # generated agreements contain personal data
 output/
+dist/
