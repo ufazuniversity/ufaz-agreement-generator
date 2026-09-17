@@ -20,7 +20,7 @@ import csv
 import json
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
@@ -163,9 +163,10 @@ def row_to_fields(row: dict, hmap: dict[str, str], cfg: dict, index: int) -> tup
     # --- header -----------------------------------------------------------
     agreement_no = clean(g("agreement_no"))
     if not agreement_no:
-        pattern = cfg.get("agreement_no_pattern", "IT-{year}-{seq:03d}")
-        agreement_no = pattern.format(year=date.today().year, seq=cfg.get("_seq_start", 1) + index - 1,
-                                      date=date.today().strftime("%Y%m%d"))
+        pattern = cfg.get("agreement_no_pattern", "{now:%y%m%d%H%M}")
+        now = cfg["_now"] + timedelta(minutes=index - 1)   # one minute per row keeps a batch's numbers unique
+        agreement_no = pattern.format(now=now, year=now.year, seq=cfg.get("_seq_start", 1) + index - 1,
+                                      date=now.strftime("%Y%m%d"))
     f["agreement_no"] = agreement_no
     f["agreement_date"] = fmt_date(g("agreement_date")) or date.today().strftime("%d/%m/%Y")
 
@@ -295,6 +296,7 @@ def main(argv=None) -> int:
         sys.exit(f"Config not found: {config}")
     cfg = json.loads(config.read_text(encoding="utf-8"))
     cfg["_seq_start"] = args.start if args.start is not None else cfg.get("agreement_no_start", 1)
+    cfg["_now"] = datetime.now()
 
     headers, rows = read_rows(args.input)
     hmap = build_header_map(headers)

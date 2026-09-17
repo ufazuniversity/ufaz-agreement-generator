@@ -37,14 +37,17 @@ automatically), or pass `-c path/to/config.json`:
   "issuer_name": "Gadir Rustamli",
   "issuer_position": "IT Specialist",
   "issuer_contact": "it@ufaz.az",
-  "agreement_no_pattern": "IT-{year}-{seq:03d}",
+  "agreement_no_pattern": "{now:%y%m%d%H%M}",
   "agreement_no_start": 1,
   "prefill_signature_dates": true
 }
 ```
 
 * `issuer_*` are used whenever the CSV's issuer columns are empty.
-* `agreement_no_pattern` numbers rows that have no agreement number. Placeholders: `{year}`,
+* `agreement_no_pattern` numbers rows that have no agreement number. The default gives
+  YYMMDDhhmm from the time you run the command (e.g. `2609171524`); each further row adds one
+  minute, so numbers in a batch stay unique. Placeholders: `{now:...}` (that time, with
+  [strftime codes](https://docs.python.org/3/library/datetime.html#format-codes)), `{year}`,
   `{seq}` (row counter, starting at `agreement_no_start` or `--start`), `{date}` (YYYYMMDD).
 * `prefill_signature_dates` also writes the issue date into the two signature-block date fields.
 
@@ -55,7 +58,7 @@ The only required column is **Receiver name**; everything else is optional.
 
 | Column | What to enter |
 |---|---|
-| Agreement No. | empty = auto-number from `agreement_no_pattern` (IT-2026-001, …) |
+| Agreement No. | empty = auto-number from `agreement_no_pattern` (2609171524, 2609171525, …) |
 | Date | agreement date; empty = today |
 | Receiver name | full name — **required** |
 | Status | Staff · Teacher · Student (synonyms like *lecturer*, *employee* also work) |
@@ -100,8 +103,8 @@ To keep a permanent `generate` command instead, install it once with
 Output:
 
 ```
-  ✓ Agreement_IT-2026-001_Aysel_Mammadova.pdf
-  ✓ Agreement_IT-2026-002_Dr._Elvin_Hasanov.pdf
+  ✓ Agreement_2609171524_Aysel_Mammadova.pdf
+  ✓ Agreement_2609171525_Dr._Elvin_Hasanov.pdf
 
 Done — 2 of 2 agreement(s) written to .../output
 ```
@@ -112,7 +115,7 @@ Useful options:
 |---|---|
 | `-o FOLDER` | write PDFs somewhere else |
 | `--lock` | make the fields read-only so the printed values can't be edited afterwards |
-| `--start 57` | first sequence number for auto-generated agreement numbers |
+| `--start 57` | first `{seq}` number, for a custom `agreement_no_pattern` that uses it |
 | `--dry-run` | list what would be produced and show warnings, without writing files |
 | `-t FILE`, `-c FILE` | use a different template or config |
 | `--help` | list all options |

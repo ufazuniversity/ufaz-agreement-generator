@@ -5,7 +5,7 @@
   "issuer_position": "IT Specialist",
   "issuer_contact": "it@ufaz.az",
 
-  "agreement_no_pattern": "IT-{year}-{seq:03d}",
+  "agreement_no_pattern": "{now:%y%m%d%H%M}",
   "agreement_no_start": 1,
 
   "prefill_signature_dates": true
