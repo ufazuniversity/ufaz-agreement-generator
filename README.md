@@ -1,21 +1,26 @@
 # UFAZ IT — Device Issuance Agreement generator
 
-Generates a filled **Device Issuance Agreement** PDF for every receiver listed in a
-CSV file. Each PDF is the standard one-page agreement with the receiver's
-details, device details, dates and checkboxes already completed — only the three
-signatures remain to be written by hand.
+Generates filled **Device Issuance Agreement** PDFs — for every receiver listed in a
+CSV file (a *Batch*), or one at a time in an on-screen *Form* when no file is given.
+Each PDF is the standard one-page agreement with the receiver's details, device
+details, dates and checkboxes already completed — only the three signatures remain
+to be written by hand.
 
 ```
 ufaz-agreement-generator/
 ├── pyproject.toml              package definition + `generate` command (managed by uv)
 ├── uv.lock                     exact pinned versions
+├── CONTEXT.md                  glossary: Agreement, Receiver, Issuer, Batch, Form, …
 ├── receivers_template.csv      CSV to fill in (headers + 2 sample rows)
 ├── src/ufaz_agreement_generator/
-│   ├── cli.py                  the generator
+│   ├── cli.py                  the `generate` command; runs a Batch or opens the Form
+│   ├── agreement.py            receiver details -> filled PDF (shared by Batch and Form)
+│   ├── form.py                 the on-screen Form (Textual)
 │   ├── config.json             default issuer settings + agreement-number pattern
 │   └── template/
 │       └── UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf   the blank fillable form
-└── template/source/            build_template.py + logo — regenerates the blank form if the layout changes
+├── template/source/            build_template.py + logo — regenerates the blank template if the layout changes
+└── tests/                      pytest tests for the Batch and the Form
 ```
 
 ## 1. Setup (once)
@@ -28,13 +33,14 @@ PDFs are written to `./output` in the folder you run it from.
 
 ### Settings
 
-The bundled defaults are in `src/ufaz_agreement_generator/config.json`. To use your own, copy
+The bundled defaults are in `src/ufaz_agreement_generator/config.json`. They leave the issuer
+name empty, so nobody's name ends up on another person's agreements. To use your own, copy
 that file as `config.json` into the folder you run the command from (it is picked up
-automatically), or pass `-c path/to/config.json`:
+automatically), or pass `-c path/to/config.json`. For example:
 
 ```json
 {
-  "issuer_name": "Gadir Rustamli",
+  "issuer_name": "Your Name",
   "issuer_position": "IT Specialist",
   "issuer_contact": "it@ufaz.az",
   "agreement_no_pattern": "{now:%y%m%d%H%M}",
@@ -43,7 +49,7 @@ automatically), or pass `-c path/to/config.json`:
 }
 ```
 
-* `issuer_*` are used whenever the CSV's issuer columns are empty.
+* `issuer_*` are used whenever the CSV's issuer columns are empty, and pre-fill the Form.
 * `agreement_no_pattern` numbers rows that have no agreement number. The default gives
   YYMMDDhhmm from the time you run the command (e.g. `2609171524`); each further row adds one
   minute, so numbers in a batch stay unique. Placeholders: `{now:...}` (that time, with
@@ -85,7 +91,7 @@ rename them or use your own export from another system as long as the meaning is
 
 ## 3. Generate
 
-Point `--from` at this project folder:
+Point `--from` at this project folder and give it the CSV:
 
 ```bash
 uvx --from /path/to/ufaz-agreement-generator generate receivers.csv
@@ -116,14 +122,49 @@ Useful options:
 | `-o FOLDER` | write PDFs somewhere else |
 | `--lock` | make the fields read-only so the printed values can't be edited afterwards |
 | `--start 57` | first `{seq}` number, for a custom `agreement_no_pattern` that uses it |
-| `--dry-run` | list what would be produced and show warnings, without writing files |
+| `--dry-run` | list what would be produced and show warnings, without writing files (CSV only) |
 | `-t FILE`, `-c FILE` | use a different template or config |
 | `--help` | list all options |
 
 Rows with problems (unknown status, missing return date, …) are reported with `!` but do
-not stop the rest of the batch.
+not stop the rest of the batch. An existing PDF with the same name is replaced.
 
-## Changing the form itself
+## 4. Or fill in one agreement at a time (the Form)
+
+Run the same command without a CSV file:
+
+```bash
+uvx --from /path/to/ufaz-agreement-generator generate
+```
+
+A form opens in the terminal, with the same sections as the paper agreement. It starts
+filled in with the issuer details from your settings, the next agreement number and
+today's date — all of them can be changed.
+
+* **F2** (or the *Generate* button) writes the PDF to `./output`.
+* **F3** (or *Open PDF*) opens the last PDF in your PDF viewer, ready to print.
+* **F10** quits.
+
+The shortcuts are F-keys so they also work inside zellij or tmux, which take most Ctrl keys.
+
+Generate stays disabled until the receiver's full name is filled in and every date is a real
+date (DD/MM/YYYY). Other problems, like a missing return date, are shown in yellow above the
+button but do not stop you. If the PDF already exists, the Form asks before replacing it.
+
+After each agreement the receiver, device and return fields are cleared for the next one;
+the issuer details and dates stay. Agreement numbers never repeat within a session: two
+agreements made in the same minute get consecutive numbers.
+
+`-o`, `-t`, `-c`, `--lock` and `--start` work the same as with a CSV. The Form needs a real
+terminal; without one, give a CSV file instead.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+## Changing the agreement template
 
 The blank template is produced by `template/source/build_template.py` (reportlab). If the
 contract wording or layout needs to change, edit that script and rebuild:
@@ -132,5 +173,5 @@ contract wording or layout needs to change, edit that script and rebuild:
 uv run --group template template/source/build_template.py src/ufaz_agreement_generator/template/UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf template/source/ufaz_logo.png
 ```
 
-Field names are defined there; `cli.py` refers to them by name, so keep them
-unchanged (or update both files together).
+Field names are defined there; `agreement.py` and `form.py` refer to them by name, so keep
+them unchanged (or update the files together).
