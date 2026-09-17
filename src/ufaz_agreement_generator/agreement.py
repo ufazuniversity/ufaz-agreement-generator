@@ -2,12 +2,14 @@
 Turning one receiver's details into a filled Device Issuance Agreement PDF.
 
 Shared by the Batch (a CSV of receivers, see cli.py) and the Form (one agreement
-at a time on screen, see form.py), so both apply the same rules and defaults.
+at a time, in the terminal — form.py — or in the browser — web.py), so all of them
+apply the same rules and defaults.
 """
 from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
@@ -226,9 +228,62 @@ def row_to_fields(row: dict, hmap: dict[str, str], cfg: dict, index: int) -> tup
 
 
 # ---------------------------------------------------------------------------
+# The Form's fields — shared by the Form in the terminal and in the browser
+# ---------------------------------------------------------------------------
+FORM_KEYS = {key: key for key in COLUMN_ALIASES}   # the Form's rows are keyed by internal key, not by CSV header
+STATUSES = ["Staff", "Teacher", "Student"]
+DEVICE_TYPES = ["Laptop", "Desktop PC", "Monitor", "Other"]
+ACCESSORIES = ["Charger", "Bag", "Mouse", "Keyboard"]
+CONDITIONS = ["New", "Good", "Used"]
+CHOICES = {"receiver_status": STATUSES, "device_type": DEVICE_TYPES, "condition": CONDITIONS}
+TICK_BOXES = [f"acc_{a.lower()}" for a in ACCESSORIES] + ["acc_other", "return_until_end", "return_on_request"]
+DATE_FIELDS = {"agreement_date": "Date", "issue_date": "Issue date", "return_date": "Return date"}
+KEPT_FIELDS = ["agreement_date", "issue_date", "issuer_name", "issuer_position", "issuer_contact"]
+
+
+def form_row(entries: dict, auto_no: str = "") -> dict:
+    """A filled-in Form as a row for row_to_fields, written the way a CSV would have them.
+
+    `entries` has each text box by key, each choice as the picked option ("" for none) and each
+    tick box (TICK_BOXES) as True or False.  An empty agreement number becomes `auto_no`.
+    """
+    row = {key: clean(entries.get(key)) for key in COLUMN_ALIASES if key not in TICK_BOXES}
+    row["agreement_no"] = row["agreement_no"] or auto_no
+    if row["device_type"] != "Other":
+        row["device_type_other"] = ""
+    row["accessories"] = ", ".join(a for a in ACCESSORIES if entries.get(f"acc_{a.lower()}"))
+    if not entries.get("acc_other"):
+        row["acc_other_text"] = ""
+    row["return_until_end"] = "Yes" if entries.get("return_until_end") else ""
+    row["return_on_request"] = "Yes" if entries.get("return_on_request") else ""
+    return row
+
+
+def form_problems(entries: dict, cfg: dict) -> tuple[list[str], list[str]]:
+    """(blocking, warnings) for a filled-in Form: what stops Generate, and what only deserves a second look."""
+    blocking = [] if clean(entries.get("receiver_name")) else ["Receiver full name is required"]
+    blocking += [f"{label} is not a date — use DD/MM/YYYY" for key, label in DATE_FIELDS.items()
+                 if clean(entries.get(key)) and parse_date(entries.get(key)) is None]
+    row = form_row(entries, auto_no="-")   # the number plays no part in the checks
+    warnings = []
+    if row["device_type"] == "Other" and not row["device_type_other"]:
+        warnings.append("describe the other device type")
+    if entries.get("acc_other") and not row["acc_other_text"]:
+        warnings.append("describe the other accessory")
+    warnings += [w for w in row_to_fields(row, FORM_KEYS, cfg, 1)[1] if w != "receiver name is empty"]
+    return blocking, warnings
+
+
+# ---------------------------------------------------------------------------
 # PDF filling
 # ---------------------------------------------------------------------------
 def fill_pdf(template: Path, values: dict, out_path: Path, lock: bool) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(render_pdf(template, values, lock))
+
+
+def render_pdf(template: Path, values: dict, lock: bool) -> bytes:
+    """The filled-in agreement as PDF bytes."""
     reader = PdfReader(str(template))
     writer = PdfWriter(clone_from=reader)
     for page in writer.pages:
@@ -247,6 +302,6 @@ def fill_pdf(template: Path, values: dict, out_path: Path, lock: bool) -> None:
     doc_info = {"/Title": f"Device Issuance Agreement {values.get('agreement_no', '')} — {values.get('receiver_name', '')}",
                 "/Author": "UFAZ IT Department"}
     writer.add_metadata(doc_info)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "wb") as fh:
-        writer.write(fh)
+    pdf = BytesIO()
+    writer.write(pdf)
+    return pdf.getvalue()

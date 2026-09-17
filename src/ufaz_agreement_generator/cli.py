@@ -3,12 +3,14 @@ UFAZ IT — Device Issuance Agreement generator
 =============================================
 
 With a CSV file (a Batch), produces one filled Device Issuance Agreement PDF per
-row.  Without one, opens the Form to fill in agreements one at a time on screen.
-Both use the fillable PDF template bundled with the package.
+row.  Without one, opens the Form to fill in agreements one at a time on screen:
+in the terminal, or with --web in the browser.  All use the fillable PDF template
+bundled with the package.
 
 Usage
 -----
     generate                          open the Form
+    generate --web                    open the Form in the browser
     generate receivers.csv
     generate receivers.csv -o output --lock
     generate receivers.csv --config config.json
@@ -26,6 +28,7 @@ from pathlib import Path
 
 from .agreement import build_header_map, fill_pdf, pdf_filename, row_to_fields
 from .form import AgreementForm
+from .web import serve
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE = HERE / "template" / "UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf"
@@ -86,6 +89,20 @@ def run_batch(args: argparse.Namespace, cfg: dict) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+def load_settings(config: Path | None, start: int | None) -> dict:
+    """The settings from `config`, else ./config.json if present, else the bundled defaults."""
+    config = config or (Path("config.json") if Path("config.json").exists() else DEFAULT_CONFIG)
+    if not config.exists():
+        sys.exit(f"Config not found: {config}")
+    cfg = json.loads(config.read_text(encoding="utf-8"))
+    cfg["_seq_start"] = start if start is not None else cfg.get("agreement_no_start", 1)
+    cfg["_now"] = datetime.now()
+    return cfg
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
@@ -99,25 +116,28 @@ def main(argv=None) -> int:
     ap.add_argument("--lock", action="store_true", help="make the fields read-only in the generated PDFs")
     ap.add_argument("--start", type=int, default=None, help="first sequence number for auto-generated agreement numbers")
     ap.add_argument("--dry-run", action="store_true", help="show what would be generated without writing PDFs (CSV only)")
+    ap.add_argument("--web", action="store_true", help="open the form in the browser; each PDF downloads there instead of going to -o")
+    ap.add_argument("--host", default="127.0.0.1", help="with --web: address to listen on (default: 127.0.0.1, this computer only)")
+    ap.add_argument("--port", type=int, default=5001, help="with --web: port to listen on (default: 5001)")
     args = ap.parse_args(argv)
 
+    if args.web and args.input is not None:
+        sys.exit("--web opens the form in the browser; leave out the CSV file")
     if args.input is None:
         if args.dry_run:
             sys.exit("--dry-run needs a CSV file; the form writes each agreement when you generate it")
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        if not args.web and not (sys.stdin.isatty() and sys.stdout.isatty()):
             sys.exit("No CSV file given, and there is no terminal to open the form in. Usage: generate receivers.csv")
     elif not args.input.exists():
         sys.exit(f"Input file not found: {args.input}")
     if not args.template.exists():
         sys.exit(f"Template not found: {args.template}")
 
-    config = args.config or (Path("config.json") if Path("config.json").exists() else DEFAULT_CONFIG)
-    if not config.exists():
-        sys.exit(f"Config not found: {config}")
-    cfg = json.loads(config.read_text(encoding="utf-8"))
-    cfg["_seq_start"] = args.start if args.start is not None else cfg.get("agreement_no_start", 1)
-    cfg["_now"] = datetime.now()
+    cfg = load_settings(args.config, args.start)
 
+    if args.web:
+        serve(cfg, args.template, args.lock, args.host, args.port)
+        return 0
     if args.input is None:
         AgreementForm(cfg, args.template, args.output, args.lock).run()
         return 0

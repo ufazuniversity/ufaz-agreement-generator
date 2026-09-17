@@ -1,17 +1,25 @@
 import asyncio
+import base64
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
+from fasthtml.common import Client
 from pypdf import PdfReader
 from textual.widgets import Button, Checkbox, Input, RadioButton, RadioSet
 
-from ufaz_agreement_generator import cli, form
+from ufaz_agreement_generator import cli, form, web
 from ufaz_agreement_generator.form import AgreementForm, ConfirmReplace
 
 ROOT = Path(__file__).resolve().parents[1]
 NOON = datetime(2026, 9, 17, 12, 0)
+AYSEL_CSV = (
+    "Agreement No.,Date,Receiver name,Status,ID No.,Faculty / Department,Phone / e-mail,Device type,Brand & model,"
+    "Serial / Inventory No.,Accessories,Condition,Notes,Issue date,Return date,Until end of employment/studies,Upon request\n"
+    '2609171200,17/09/2026,Aysel Mammadova,Student,S-1,Computer Science,a@ufaz.az,Tablet,iPad Air,SN1,'
+    '"Charger, Bag, USB-C hub",Good,Scratch on lid,17/09/2026,30/06/2027,No,Yes\n')
 
 
 @pytest.fixture(autouse=True)
@@ -69,11 +77,7 @@ def test_batch_writes_one_agreement_per_row(tmp_path):
 
 def test_form_and_batch_make_the_same_pdf(tmp_path):
     csv = tmp_path / "receivers.csv"
-    csv.write_text(
-        "Agreement No.,Date,Receiver name,Status,ID No.,Faculty / Department,Phone / e-mail,Device type,Brand & model,"
-        "Serial / Inventory No.,Accessories,Condition,Notes,Issue date,Return date,Until end of employment/studies,Upon request\n"
-        '2609171200,17/09/2026,Aysel Mammadova,Student,S-1,Computer Science,a@ufaz.az,Tablet,iPad Air,SN1,'
-        '"Charger, Bag, USB-C hub",Good,Scratch on lid,17/09/2026,30/06/2027,No,Yes\n', encoding="utf-8")
+    csv.write_text(AYSEL_CSV, encoding="utf-8")
     assert cli.main([str(csv), "-o", str(tmp_path / "batch")]) == 0
 
     async def steps(app, pilot):
@@ -215,7 +219,145 @@ def test_form_opens_the_last_pdf(tmp_path, monkeypatch):
     run_form(tmp_path, steps)
 
 
+# --- Form in the browser ------------------------------------------------------
+def browser(cfg=None, clock=lambda: NOON, lock=False) -> Client:
+    return Client(web.create_app(cfg or settings(), cli.DEFAULT_TEMPLATE, lock, clock=clock))
+
+
+def page(response) -> BeautifulSoup:
+    assert response.status_code == 200
+    return BeautifulSoup(response.text, "html.parser")
+
+
+def shown(soup: BeautifulSoup) -> dict:
+    """What the page's form holds, sent the way a browser sends it: only ticked boxes and the picked choice."""
+    data = {}
+    for i in soup.select("#form input"):
+        if i.get("type") not in ("radio", "checkbox"):
+            data[i["name"]] = i.get("value", "")
+        elif i.has_attr("checked"):
+            data[i["name"]] = i.get("value", "on")
+    return data
+
+
+def submit(client: Client, soup: BeautifulSoup, **changes) -> BeautifulSoup:
+    return page(client.post("/generate", data={**shown(soup), **changes}))
+
+
+def downloaded(soup: BeautifulSoup, folder: Path) -> Path:
+    """The PDF the page handed to the browser, saved under its download name."""
+    link = soup.select_one("#download")
+    pdf = folder / link["download"]
+    pdf.write_bytes(base64.b64decode(link["href"].split(",", 1)[1]))
+    return pdf
+
+
+def test_browser_form_starts_from_the_settings():
+    values = shown(page(browser(settings(issuer_name="Aynur Aliyeva")).get("/")))
+    assert values["issuer_name"] == "Aynur Aliyeva"
+    assert values["issuer_position"] == "IT Specialist"
+    assert values["agreement_no"] == "2609171200"
+    assert values["agreement_date"] == values["issue_date"] == "2026-09-17"
+    assert values["return_date"] == ""
+    assert "lock" not in values
+
+
+def test_browser_form_and_batch_make_the_same_pdf(tmp_path):
+    csv = tmp_path / "receivers.csv"
+    csv.write_text(AYSEL_CSV, encoding="utf-8")
+    assert cli.main([str(csv), "-o", str(tmp_path / "batch")]) == 0
+
+    client = browser()
+    done = submit(client, page(client.get("/")), receiver_name="Aysel Mammadova", receiver_status="Student",
+                  receiver_id="S-1", receiver_faculty="Computer Science", receiver_contact="a@ufaz.az",
+                  device_type="Other", device_type_other="Tablet", device_model="iPad Air", device_serial="SN1",
+                  acc_charger="on", acc_bag="on", acc_other="on", acc_other_text="USB-C hub", condition="Good",
+                  condition_notes="Scratch on lid", return_date="2027-06-30", return_on_request="on")
+    (tmp_path / "browser").mkdir()
+    browser_pdf = downloaded(done, tmp_path / "browser")
+    [batch_pdf] = (tmp_path / "batch").glob("*.pdf")
+    assert browser_pdf.name == batch_pdf.name
+    assert fields(browser_pdf) == fields(batch_pdf)
+
+
+def test_browser_form_clears_receiver_device_and_return_but_keeps_issuer_and_dates():
+    client = browser()
+    done = submit(client, page(client.get("/")), receiver_name="Aysel Mammadova", receiver_status="Student",
+                  device_model="iPad Air", return_date="2027-06-30", return_until_end="on",
+                  issuer_name="Aynur Aliyeva", issue_date="2026-09-16", lock="on")
+    assert done.select_one("#download")["download"] == "Agreement_2609171200_Aysel_Mammadova.pdf"
+    values = shown(done)
+    for key in ("receiver_name", "device_model", "return_date"):
+        assert values[key] == ""
+    assert "receiver_status" not in values and "return_until_end" not in values
+    assert values["issuer_name"] == "Aynur Aliyeva"
+    assert values["issue_date"] == "2026-09-16"
+    assert values["lock"] == "on"
+    # same minute on the clock, yet the next number moves on
+    assert values["agreement_no"] == "2609171201"
+
+
+def test_browser_remembers_the_issuer_and_never_repeats_its_numbers():
+    client = browser()
+    other_tab = page(client.get("/"))
+    submit(client, page(client.get("/")), receiver_name="Aysel Mammadova", issuer_name="Aynur Aliyeva")
+
+    reopened = shown(page(client.get("/")))
+    assert reopened["issuer_name"] == "Aynur Aliyeva"
+    assert reopened["agreement_no"] == "2609171201"
+    # a page shown before that agreement still offered 2609171200: it gets the next free number instead
+    done = submit(client, other_tab, receiver_name="Elvin Hasanov")
+    assert done.select_one("#download")["download"] == "Agreement_2609171201_Elvin_Hasanov.pdf"
+    # a number typed in by hand is used as it is
+    done = submit(client, page(client.get("/")), agreement_no="2609171200", receiver_name="Leyla Guliyeva")
+    assert done.select_one("#download")["download"] == "Agreement_2609171200_Leyla_Guliyeva.pdf"
+
+
+def test_browser_form_ignores_an_unreadable_memory():
+    client = browser(settings(issuer_name="Aynur Aliyeva"))
+    client.cli.cookies.set(web.MEMORY, "not json")
+    assert shown(page(client.get("/")))["issuer_name"] == "Aynur Aliyeva"
+
+
+def test_browser_form_blocks_generate_without_a_name_or_with_a_bad_date():
+    client = browser()
+    bar = page(client.post("/check", data={"receiver_name": ""}))
+    assert bar.select_one("button").has_attr("disabled")
+    assert "Receiver full name is required" in bar.text
+
+    refused = submit(client, page(client.get("/")), receiver_name="Aysel Mammadova", return_date="2026-02-31")
+    assert refused.select_one("#download") is None
+    assert "Return date is not a date" in refused.text
+    assert shown(refused)["receiver_name"] == "Aysel Mammadova"   # nothing lost
+
+    bar = page(client.post("/check", data={"receiver_name": "Aysel Mammadova", "return_date": "2027-02-28"}))
+    assert not bar.select_one("button").has_attr("disabled")
+
+
+def test_browser_form_shows_warnings_without_blocking(tmp_path):
+    client = browser()
+    bar = page(client.post("/check", data={"receiver_name": "Aysel Mammadova"}))
+    assert "no return date" in bar.text
+    assert not bar.select_one("button").has_attr("disabled")
+    assert downloaded(submit(client, page(client.get("/")), receiver_name="Aysel Mammadova"), tmp_path).exists()
+
+
+def test_browser_form_locks_the_fields_when_ticked(tmp_path):
+    client = browser()
+    locked = downloaded(submit(client, page(client.get("/")), receiver_name="Aysel Mammadova", lock="on"), tmp_path)
+    assert int(PdfReader(str(locked)).get_fields()["receiver_name"].get("/Ff", 0)) & 1
+
+
+def test_browser_form_uses_the_time_in_baku():
+    assert abs(web.baku_now() - (datetime.now(timezone.utc) + timedelta(hours=4)).replace(tzinfo=None)) < timedelta(minutes=1)
+
+
 # --- Command line -----------------------------------------------------------------
+def test_web_with_a_csv_is_an_error():
+    with pytest.raises(SystemExit, match="--web"):
+        cli.main(["receivers.csv", "--web"])
+
+
 def test_no_csv_and_no_terminal_is_an_error():
     with pytest.raises(SystemExit, match="no terminal"):
         cli.main([])

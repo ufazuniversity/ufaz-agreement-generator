@@ -1,7 +1,8 @@
 # UFAZ IT — Device Issuance Agreement generator
 
 Generates filled **Device Issuance Agreement** PDFs — for every receiver listed in a
-CSV file (a *Batch*), or one at a time in an on-screen *Form* when no file is given.
+CSV file (a *Batch*), or one at a time in an on-screen *Form* when no file is given. The
+Form opens in the terminal, or as a web page in the browser (on your computer or on Vercel).
 Each PDF is the standard one-page agreement with the receiver's details, device
 details, dates and checkboxes already completed — only the three signatures remain
 to be written by hand.
@@ -11,11 +12,14 @@ ufaz-agreement-generator/
 ├── pyproject.toml              package definition + `generate` command (managed by uv)
 ├── uv.lock                     exact pinned versions
 ├── CONTEXT.md                  glossary: Agreement, Receiver, Issuer, Batch, Form, …
+├── docs/adr/                   why some decisions were made
 ├── receivers_template.csv      CSV to fill in (headers + 2 sample rows)
+├── app.py                      entry point for Vercel: serves the Form in the browser
 ├── src/ufaz_agreement_generator/
 │   ├── cli.py                  the `generate` command; runs a Batch or opens the Form
 │   ├── agreement.py            receiver details -> filled PDF (shared by Batch and Form)
-│   ├── form.py                 the on-screen Form (Textual)
+│   ├── form.py                 the Form in the terminal (Textual)
+│   ├── web.py                  the Form in the browser (FastHTML)
 │   ├── config.json             default issuer settings + agreement-number pattern
 │   └── template/
 │       └── UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf   the blank fillable form
@@ -26,7 +30,7 @@ ufaz-agreement-generator/
 ## 1. Setup (once)
 
 Install [uv](https://docs.astral.sh/uv/). Nothing else is needed: `uvx` builds the tool, fetches
-a suitable Python (3.9 or newer) and caches everything on first run.
+a suitable Python (3.10 or newer) and caches everything on first run.
 
 The PDF form and default settings are bundled, so the command works from any folder.
 PDFs are written to `./output` in the folder you run it from.
@@ -156,7 +160,52 @@ the issuer details and dates stay. Agreement numbers never repeat within a sessi
 agreements made in the same minute get consecutive numbers.
 
 `-o`, `-t`, `-c`, `--lock` and `--start` work the same as with a CSV. The Form needs a real
-terminal; without one, give a CSV file instead.
+terminal; without one, give a CSV file or use `--web` instead.
+
+## 5. Or fill them in in the browser
+
+The same Form, as a web page:
+
+```bash
+uvx --from /path/to/ufaz-agreement-generator generate --web
+```
+
+It opens at <http://127.0.0.1:5001> in your browser; press Ctrl+C in the terminal to stop it.
+It has the same sections, starting values and checks as the terminal Form, with a date picker
+for the dates. The checks run as you type.
+
+* **Generate** downloads the PDF in the browser. Nothing is written to `./output`, and the
+  server keeps no copy. Click the file name next to *Downloaded* to download it again.
+* Then the receiver, device and return fields are cleared for the next one; the issuer
+  details and dates stay.
+* The browser remembers your issuer details and the last agreement number it used (in a
+  cookie), so they are there next time, and one browser never gives the same number twice.
+  Two different browsers generating in the same minute can get the same number, so check it
+  (see `docs/adr/0001-no-shared-agreement-counter.md`).
+* Tick *Lock the fields* to do what `--lock` does.
+* Today's date and agreement numbers use the time in Baku, wherever the server runs.
+
+`-t`, `-c`, `--start` and `--lock` (which ticks *Lock the fields* at the start) work as usual.
+`--port 8080` picks another port; `--host 0.0.0.0` lets other computers on the network open it.
+
+## 6. Deploy to Vercel
+
+The repository deploys to [Vercel](https://vercel.com) as it is: Vercel reads `pyproject.toml`
+and `uv.lock`, and serves `app` from `app.py`. No `vercel.json` or `requirements.txt` is needed.
+
+1. Use a Vercel **Pro** team. The free Hobby plan can't deploy a private repository owned by
+   a GitHub organization, and it is for personal, non-commercial use only.
+2. In Vercel, *Add New → Project*, import `ufazuniversity/ufaz-agreement-generator` and click
+   *Deploy*. Leave the build settings as they are.
+3. Every push to `main` deploys again. Commit `uv.lock` whenever dependencies change: Vercel
+   installs exactly what it lists.
+
+The issuer defaults come from `src/ufaz_agreement_generator/config.json` (leave the issuer name
+empty there: everyone types their own once, and their browser remembers it).
+
+The production URL is open to anyone who has the link; there is no login. To limit it to
+members of the Vercel team, turn on *Settings → Deployment Protection → Vercel Authentication*
+for *All Deployments*.
 
 ## Tests
 
@@ -173,5 +222,5 @@ contract wording or layout needs to change, edit that script and rebuild:
 uv run --group template template/source/build_template.py src/ufaz_agreement_generator/template/UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf template/source/ufaz_logo.png
 ```
 
-Field names are defined there; `agreement.py` and `form.py` refer to them by name, so keep
-them unchanged (or update the files together).
+Field names are defined there; `agreement.py`, `form.py` and `web.py` refer to them by name,
+so keep them unchanged (or update the files together).

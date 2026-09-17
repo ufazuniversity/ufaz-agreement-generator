@@ -22,15 +22,8 @@ from textual.screen import ModalScreen
 from textual.validation import Function
 from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, RadioButton, RadioSet, Static
 
-from .agreement import COLUMN_ALIASES, fill_pdf, format_agreement_no, parse_date, pdf_filename, row_to_fields
-
-HMAP = {key: key for key in COLUMN_ALIASES}   # the Form's rows are keyed by internal key, not by CSV header
-STATUSES = ["Staff", "Teacher", "Student"]
-DEVICE_TYPES = ["Laptop", "Desktop PC", "Monitor", "Other"]
-ACCESSORIES = ["Charger", "Bag", "Mouse", "Keyboard"]
-CONDITIONS = ["New", "Good", "Used"]
-DATE_FIELDS = {"agreement_date": "Date", "issue_date": "Issue date", "return_date": "Return date"}
-KEPT_FIELDS = ["agreement_date", "issue_date", "issuer_name", "issuer_position", "issuer_contact"]
+from .agreement import (ACCESSORIES, CHOICES, CONDITIONS, DATE_FIELDS, DEVICE_TYPES, FORM_KEYS, KEPT_FIELDS, STATUSES,
+                        fill_pdf, form_problems, form_row, format_agreement_no, parse_date, pdf_filename, row_to_fields)
 
 
 def open_file(path: Path) -> None:
@@ -185,38 +178,16 @@ class AgreementForm(App):
         index = self.query_one(f"#{key}", RadioSet).pressed_index
         return options[index] if index >= 0 else ""
 
-    def ticked(self, key: str) -> bool:
-        return self.query_one(f"#{key}", Checkbox).value
-
-    def row(self) -> dict:
-        """The form's values as a row for row_to_fields, written the way a CSV would have them."""
-        row = {i.id: i.value for i in self.query(Input)}
-        row["agreement_no"] = row["agreement_no"].strip() or self.auto_no
-        row["receiver_status"] = self.chosen("receiver_status", STATUSES)
-        row["device_type"] = self.chosen("device_type", DEVICE_TYPES)
-        if row["device_type"] != "Other":
-            row["device_type_other"] = ""
-        row["accessories"] = ", ".join(a for a in ACCESSORIES if self.ticked(f"acc_{a.lower()}"))
-        if not self.ticked("acc_other"):
-            row["acc_other_text"] = ""
-        row["condition"] = self.chosen("condition", CONDITIONS)
-        row["return_until_end"] = "Yes" if self.ticked("return_until_end") else ""
-        row["return_on_request"] = "Yes" if self.ticked("return_on_request") else ""
-        return row
+    def entries(self) -> dict:
+        """What is filled in: text boxes, picked choices and tick boxes, by key."""
+        entries: dict = {i.id: i.value for i in self.query(Input)}
+        entries.update({key: self.chosen(key, options) for key, options in CHOICES.items()})
+        entries.update({c.id: c.value for c in self.query(Checkbox)})
+        return entries
 
     def problems(self) -> tuple[list[str], list[str]]:
         """(blocking, warnings): what stops Generate, and what only deserves a second look."""
-        blocking = [] if self.value("receiver_name") else ["Receiver full name is required"]
-        blocking += [f"{label} is not a date — use DD/MM/YYYY" for key, label in DATE_FIELDS.items()
-                     if self.value(key) and parse_date(self.value(key)) is None]
-        row = self.row()
-        warnings = []
-        if row["device_type"] == "Other" and not row["device_type_other"].strip():
-            warnings.append("describe the other device type")
-        if self.ticked("acc_other") and not row["acc_other_text"].strip():
-            warnings.append("describe the other accessory")
-        warnings += [w for w in row_to_fields(row, HMAP, self.cfg, 1)[1] if w != "receiver name is empty"]
-        return blocking, warnings
+        return form_problems(self.entries(), self.cfg)
 
     @on(Input.Changed)
     @on(RadioSet.Changed)
@@ -254,7 +225,7 @@ class AgreementForm(App):
         if blocking:
             self.notify("\n".join(blocking), title="Not ready to generate", severity="error")
             return
-        values, _ = row_to_fields(self.row(), HMAP, self.cfg, 1)
+        values, _ = row_to_fields(form_row(self.entries(), self.auto_no), FORM_KEYS, self.cfg, 1)
         out_path = self.output / pdf_filename(values, 1)
         kept = {key: self.value(key) for key in KEPT_FIELDS}
 

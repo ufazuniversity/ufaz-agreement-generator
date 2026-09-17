@@ -5,3 +5,6 @@ __pycache__/
 # generated agreements contain personal data
 output/
 dist/
+
+# Vercel CLI link to the project
+.vercel/

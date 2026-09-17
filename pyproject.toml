@@ -1,12 +1,14 @@
 [project]
 name = "ufaz-agreement-generator"
 version = "0.1.0"
-description = "Generate filled UFAZ IT Device Issuance Agreement PDFs from a CSV of receivers."
+description = "Generate filled UFAZ IT Device Issuance Agreement PDFs from a CSV of receivers, or one at a time in a form."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pypdf>=3.17",
+    "python-fasthtml>=0.14.13",
     "textual>=8.2.8",
+    "tzdata>=2026.4",
 ]
 
 [project.scripts]

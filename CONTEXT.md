@@ -11,7 +11,7 @@ The one-page Device Issuance Agreement for one Receiver and one device, signed b
 _Avoid_: Contract, form (as the document)
 
 **Agreement number**:
-The identifier printed on an Agreement; unique across everything issued.
+The identifier printed on an Agreement. It should be unique across everything issued; the Issuer is responsible for that, as nothing guarantees it.
 _Avoid_: Contract no, ID
 
 **Receiver**:
@@ -34,7 +34,7 @@ _Avoid_: CSV mode, bulk mode
 
 **Form**:
 The on-screen way to fill in and produce Agreements one at a time.
-_Avoid_: TUI mode, interactive mode, wizard
+_Avoid_: TUI mode, interactive mode, wizard, web UI
 
 **Settings**:
 The values that pre-fill or fill in anything left empty: Issuer details and the Agreement number pattern.
