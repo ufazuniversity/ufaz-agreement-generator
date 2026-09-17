@@ -1,0 +1,12 @@
+{
+  "_comment": "Defaults used when a column is missing or empty in the spreadsheet. Edit to match your department.",
+
+  "issuer_name": "",
+  "issuer_position": "IT Specialist",
+  "issuer_contact": "it@ufaz.az",
+
+  "agreement_no_pattern": "IT-{year}-{seq:03d}",
+  "agreement_no_start": 1,
+
+  "prefill_signature_dates": true
+}

@@ -1,0 +1,14 @@
+[project]
+name = "ufaz-agreement-generator"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "openpyxl>=3.1",
+    "pypdf>=3.17",
+]
+
+[dependency-groups]
+template = [
+    "pillow>=11.3.0",
+    "reportlab>=5.0.1",
+]
