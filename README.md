@@ -7,7 +7,7 @@ signatures remain to be written by hand.
 
 ```
 ufaz-agreement-generator/
-├── pyproject.toml              package definition + `ufaz-agreement-generator` command (managed by uv)
+├── pyproject.toml              package definition + `generate` command (managed by uv)
 ├── uv.lock                     exact pinned versions
 ├── receivers_template.csv      CSV to fill in (headers + 2 sample rows)
 ├── src/ufaz_agreement_generator/
@@ -85,16 +85,16 @@ rename them or use your own export from another system as long as the meaning is
 Point `--from` at this project folder:
 
 ```bash
-uvx --from /path/to/ufaz-agreement-generator ufaz-agreement-generator receivers.csv
+uvx --from /path/to/ufaz-agreement-generator generate receivers.csv
 ```
 
 Or straight from GitHub, without cloning (the repository is private, so this uses your SSH key):
 
 ```bash
-uvx --from git+ssh://git@github.com/ufazuniversity/ufaz-agreement-generator ufaz-agreement-generator receivers.csv
+uvx --from git+ssh://git@github.com/ufazuniversity/ufaz-agreement-generator generate receivers.csv
 ```
 
-To keep a permanent `ufaz-agreement-generator` command instead, install it once with
+To keep a permanent `generate` command instead, install it once with
 `uv tool install /path/to/ufaz-agreement-generator` (re-run with `--reinstall` after changes).
 
 Output:

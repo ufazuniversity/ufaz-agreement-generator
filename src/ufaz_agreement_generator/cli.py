@@ -7,11 +7,11 @@ Agreement PDF per row, using the fillable PDF template bundled with the package.
 
 Usage
 -----
-    ufaz-agreement-generator receivers.csv
-    ufaz-agreement-generator receivers.csv -o output --lock
-    ufaz-agreement-generator receivers.csv --config config.json
+    generate receivers.csv
+    generate receivers.csv -o output --lock
+    generate receivers.csv --config config.json
 
-Run  ufaz-agreement-generator --help  for all options.
+Run  generate --help  for all options.
 """
 from __future__ import annotations
 
