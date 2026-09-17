@@ -6,8 +6,9 @@ details from the settings (or from this browser's last agreement), the next agre
 and today's date in Baku.  After each agreement the PDF downloads, and the receiver, device and
 return fields are cleared for the next one; the Issuer details and dates stay.
 
-The server remembers nothing between requests: each browser keeps its Issuer details and the
-last agreement number it used in a cookie (see docs/adr/0001-no-shared-agreement-counter.md).
+The server remembers nothing between requests: each browser keeps the Issuer details it changed
+from the settings and the last agreement number it used in a cookie (see
+docs/adr/0001-no-shared-agreement-counter.md).  Details left as they were follow the settings.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from .agreement import (ACCESSORIES, CONDITIONS, DEVICE_TYPES, FORM_KEYS, KEPT_F
                         form_problems, form_row, format_agreement_no, pdf_filename, render_pdf, row_to_fields)
 
 BAKU = ZoneInfo("Asia/Baku")
-MEMORY = "ufaz_form"          # the cookie with this browser's Issuer details and last agreement number
+MEMORY = "ufaz_form"          # the cookie with this browser's own Issuer details and last agreement number
 ISSUER_FIELDS = ["issuer_name", "issuer_position", "issuer_contact"]
 PICO = Link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css")
 CSS = """
@@ -135,16 +136,19 @@ def download(name: str, pdf: bytes) -> tuple:
 # This browser's memory
 # ---------------------------------------------------------------------------
 def remembered(req) -> dict:
-    """This browser's Issuer details and last auto number; empty if it has none or the cookie can't be read."""
+    """This browser's own Issuer details and last auto number; empty if it has none or the cookie can't be read."""
     try:
         memory = json.loads(unquote(req.cookies.get(MEMORY, "")))
         if memory.get("numbered_at"):
             datetime.fromisoformat(memory["numbered_at"])
         if not isinstance(memory.get("issued", 0), int):
             raise ValueError("issued is not a count")
+        if not isinstance(memory.get("issuer", {}), dict):
+            raise ValueError("issuer is not a set of details")
     except (ValueError, TypeError, AttributeError):
         return {}
-    return memory
+    # Older versions kept every Issuer detail, the settings' too, outside "issuer": those are dropped.
+    return {key: memory[key] for key in ("numbered_at", "issued", "issuer") if key in memory}
 
 
 def remember(memory: dict) -> object:
@@ -178,7 +182,7 @@ def create_app(cfg: dict, template: Path, lock: bool = False, clock=baku_now) ->
         today = clock().date().isoformat()
         auto_no, auto_at = next_number(memory)
         entries = {"agreement_no": auto_no, "agreement_date": today, "issue_date": today, "lock": lock,
-                   **{key: memory.get(key, cfg.get(key, "")) for key in ISSUER_FIELDS}}
+                   **{key: memory.get("issuer", {}).get(key, cfg.get(key, "")) for key in ISSUER_FIELDS}}
         return Titled("UFAZ Device Issuance Agreement", form_view(entries, auto_no, auto_at, cfg))
 
     @app.post("/check")
@@ -206,7 +210,7 @@ def create_app(cfg: dict, template: Path, lock: bool = False, clock=baku_now) ->
         if values["agreement_no"] == auto_no:
             memory["numbered_at"] = auto_at.isoformat()
         memory["issued"] = memory.get("issued", 0) + 1
-        memory.update({key: entries.get(key, "") for key in ISSUER_FIELDS})
+        memory["issuer"] = {key: entries.get(key, "") for key in ISSUER_FIELDS if entries.get(key, "") != cfg.get(key, "")}
         kept = {key: entries.get(key, "") for key in KEPT_FIELDS}
         next_no, next_at = next_number(memory)
         fresh = {**kept, "agreement_no": next_no, "lock": "lock" in form}

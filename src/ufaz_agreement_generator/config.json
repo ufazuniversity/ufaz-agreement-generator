@@ -1,9 +1,9 @@
 {
   "_comment": "Defaults used when a column is missing or empty in the CSV. Edit to match your department.",
 
-  "issuer_name": "",
-  "issuer_position": "IT Specialist",
-  "issuer_contact": "it@ufaz.az",
+  "issuer_name": "Gadir Rustamli",
+  "issuer_position": "IT Manager",
+  "issuer_contact": "+994125990074 ext:320 g.rustamli@ufaz.az",
 
   "agreement_no_pattern": "{now:%y%m%d%H%M}",
   "agreement_no_start": 1,

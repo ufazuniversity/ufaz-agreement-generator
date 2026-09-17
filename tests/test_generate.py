@@ -3,6 +3,7 @@ import base64
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from bs4 import BeautifulSoup
@@ -72,7 +73,7 @@ def test_batch_writes_one_agreement_per_row(tmp_path):
     assert len(pdfs) == 2
     aysel = fields(next(p for p in pdfs if "Aysel" in p.name))
     assert aysel["receiver_status"] == "/student"
-    assert aysel["issuer_contact"] == "it@ufaz.az"
+    assert aysel["issuer_contact"] == "+994125990074 ext:320 g.rustamli@ufaz.az"
 
 
 def test_form_and_batch_make_the_same_pdf(tmp_path):
@@ -101,7 +102,7 @@ def test_form_and_batch_make_the_same_pdf(tmp_path):
 def test_form_starts_from_the_settings(tmp_path):
     async def steps(app, pilot):
         assert app.query_one("#issuer_name", Input).value == "Aynur Aliyeva"
-        assert app.query_one("#issuer_position", Input).value == "IT Specialist"
+        assert app.query_one("#issuer_position", Input).value == "IT Manager"
         assert app.query_one("#agreement_no", Input).value == "2609171200"
         assert app.query_one("#agreement_date", Input).value == "17/09/2026"
         assert app.query_one("#issue_date", Input).value == "17/09/2026"
@@ -255,7 +256,7 @@ def downloaded(soup: BeautifulSoup, folder: Path) -> Path:
 def test_browser_form_starts_from_the_settings():
     values = shown(page(browser(settings(issuer_name="Aynur Aliyeva")).get("/")))
     assert values["issuer_name"] == "Aynur Aliyeva"
-    assert values["issuer_position"] == "IT Specialist"
+    assert values["issuer_position"] == "IT Manager"
     assert values["agreement_no"] == "2609171200"
     assert values["agreement_date"] == values["issue_date"] == "2026-09-17"
     assert values["return_date"] == ""
@@ -311,6 +312,27 @@ def test_browser_remembers_the_issuer_and_never_repeats_its_numbers():
     # a number typed in by hand is used as it is
     done = submit(client, page(client.get("/")), agreement_no="2609171200", receiver_name="Leyla Guliyeva")
     assert done.select_one("#download")["download"] == "Agreement_2609171200_Leyla_Guliyeva.pdf"
+
+
+def test_browser_follows_the_settings_for_issuer_details_it_left_alone():
+    before = browser(settings(issuer_position="IT Specialist"))
+    submit(before, page(before.get("/")), receiver_name="Aysel Mammadova", issuer_name="Aynur Aliyeva")
+
+    after = browser()   # the settings changed since
+    after.cli.cookies.update(before.cli.cookies)
+    reopened = shown(page(after.get("/")))
+    assert reopened["issuer_name"] == "Aynur Aliyeva"
+    assert reopened["issuer_position"] == "IT Manager"
+
+
+def test_browser_form_ignores_issuer_details_remembered_by_an_older_version():
+    client = browser()
+    client.cli.cookies.set(web.MEMORY, quote(json.dumps({
+        "issuer_name": "", "issuer_position": "IT Specialist", "issuer_contact": "it@ufaz.az",
+        "numbered_at": "2026-09-17T12:00:00", "issued": 1})))
+    values = shown(page(client.get("/")))
+    assert [values[key] for key in web.ISSUER_FIELDS] == [settings()[key] for key in web.ISSUER_FIELDS]
+    assert values["agreement_no"] == "2609171201"
 
 
 def test_browser_form_ignores_an_unreadable_memory():

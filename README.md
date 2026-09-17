@@ -37,8 +37,8 @@ PDFs are written to `./output` in the folder you run it from.
 
 ### Settings
 
-The bundled defaults are in `src/ufaz_agreement_generator/config.json`. They leave the issuer
-name empty, so nobody's name ends up on another person's agreements. To use your own, copy
+The bundled defaults are in `src/ufaz_agreement_generator/config.json`. They fill in Gadir
+Rustamli (IT Manager) as the issuer. To use your own, copy
 that file as `config.json` into the folder you run the command from (it is picked up
 automatically), or pass `-c path/to/config.json`. For example:
 
@@ -178,8 +178,9 @@ for the dates. The checks run as you type.
   server keeps no copy. Click the file name next to *Downloaded* to download it again.
 * Then the receiver, device and return fields are cleared for the next one; the issuer
   details and dates stay.
-* The browser remembers your issuer details and the last agreement number it used (in a
-  cookie), so they are there next time, and one browser never gives the same number twice.
+* The browser remembers the issuer details you changed and the last agreement number it used
+  (in a cookie), so they are there next time, and one browser never gives the same number twice.
+  Issuer details you left as they were follow `config.json`, even after it changes.
   Two different browsers generating in the same minute can get the same number, so check it
   (see `docs/adr/0001-no-shared-agreement-counter.md`).
 * Tick *Lock the fields* to do what `--lock` does.
@@ -200,8 +201,8 @@ and `uv.lock`, and serves `app` from `app.py`. No `vercel.json` or `requirements
 3. Every push to `main` deploys again. Commit `uv.lock` whenever dependencies change: Vercel
    installs exactly what it lists.
 
-The issuer defaults come from `src/ufaz_agreement_generator/config.json` (leave the issuer name
-empty there: everyone types their own once, and their browser remembers it).
+The issuer defaults come from `src/ufaz_agreement_generator/config.json` (Gadir Rustamli). Anyone
+else types their own details once, and their browser remembers them.
 
 The production URL is open to anyone who has the link; there is no login. To limit it to
 members of the Vercel team, turn on *Settings → Deployment Protection → Vercel Authentication*
