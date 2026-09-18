@@ -1,0 +1,26 @@
+# Quadlet unit: Podman runs the web Form as a systemd service, and starts it again
+# after a crash or a reboot.  See README, "7. Run the web Form in a container".
+#
+#   mkdir -p ~/.config/containers/systemd
+#   cp deploy/ufaz-agreement-form.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload && systemctl --user start ufaz-agreement-form
+[Unit]
+Description=UFAZ Device Issuance Agreement Form (web)
+
+[Container]
+# Build it first: podman build -t ufaz-agreement-form .
+Image=localhost/ufaz-agreement-form:latest
+# Only this computer can reach it.  Use 5001:5001 to let the network in.
+PublishPort=127.0.0.1:5001:5001
+# The server writes nothing, so the whole filesystem stays read-only.
+ReadOnly=true
+Tmpfs=/tmp
+NoNewPrivileges=true
+# Your own issuer defaults, instead of the bundled ones (see README, "Settings").
+#Volume=%h/ufaz-agreement-form/config.json:/app/config.json:ro,Z
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -15,6 +15,9 @@ ufaz-agreement-generator/
 ├── docs/adr/                   why some decisions were made
 ├── receivers_template.csv      CSV to fill in (headers + 2 sample rows)
 ├── app.py                      entry point for Vercel: serves the Form in the browser
+├── Containerfile               builds the ~90 MB image (`Dockerfile` is a link to it)
+├── compose.yaml                one service: the web Form (podman compose / docker compose)
+├── deploy/                     systemd unit, so Podman keeps the Form running
 ├── src/ufaz_agreement_generator/
 │   ├── cli.py                  the `generate` command; runs a Batch or opens the Form
 │   ├── agreement.py            receiver details -> filled PDF (shared by Batch and Form)
@@ -208,25 +211,59 @@ The production URL is open to anyone who has the link; there is no login. To lim
 members of the Vercel team, turn on *Settings → Deployment Protection → Vercel Authentication*
 for *All Deployments*.
 
-## 7. Or run the web Form in Docker
+## 7. Or run the web Form in a container
 
-`Dockerfile` builds a small image (about 90 MB) that serves the same Form on port 5001:
+`Containerfile` builds a small image (about 90 MB) that serves the same Form on port 5001.
+It works with **Podman** and with **Docker** — the same commands, one word apart:
 
 ```bash
-docker build -t ufaz-agreement-form .
-docker run --rm -p 5001:5001 ufaz-agreement-form
+podman build -t ufaz-agreement-form .
+podman run --rm -p 5001:5001 ufaz-agreement-form
 ```
 
 Open <http://127.0.0.1:5001>. Stop it with Ctrl+C.
 
 * The container writes nothing and keeps no PDFs: each one is built in memory and downloaded
-  by the browser. It runs as a normal user, not root.
+  by the browser. It runs as a normal user, not root, and works with rootless Podman.
+* Because it writes nothing you can lock it down further:
+  `--read-only --tmpfs /tmp --security-opt no-new-privileges`.
 * To use your own issuer defaults, mount a settings file over the one the server reads:
-  `-v "$PWD/config.json:/app/config.json:ro"` (see [Settings](#settings)).
+  `-v "$PWD/config.json:/app/config.json:ro,Z"` (see [Settings](#settings)). The `,Z` is for
+  SELinux hosts (Fedora, RHEL); it is harmless elsewhere.
 * `-p 8080:5001` serves it on another port on your computer.
 * To keep the image small it holds only what the browser Form uses: the terminal Form
-  (`textual`) and Uvicorn's speed-ups are left out. The `Dockerfile` says which, and the build
-  stops if the server can no longer start without them.
+  (`textual`) and Uvicorn's speed-ups are left out. The `Containerfile` says which, and the
+  build stops if the server can no longer start without them.
+* `Dockerfile` is a link to `Containerfile`, so `docker build .` still finds it.
+
+### With compose
+
+`compose.yaml` builds and runs the same service, locked down as above:
+
+```bash
+podman compose up --build -d     # or: podman-compose up --build -d, docker compose up --build -d
+podman compose down
+```
+
+### Keep it running with systemd (Podman)
+
+`deploy/ufaz-agreement-form.container` is a *Quadlet* unit — a file that tells systemd to run
+the container, and to start it again after a crash or a reboot:
+
+```bash
+podman build -t ufaz-agreement-form .
+mkdir -p ~/.config/containers/systemd
+cp deploy/ufaz-agreement-form.container ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user start ufaz-agreement-form
+```
+
+Check it with `systemctl --user status ufaz-agreement-form`, stop it with `systemctl --user
+stop ufaz-agreement-form`. Run `loginctl enable-linger $USER` once if it must also start when
+nobody is logged in.
+
+The unit publishes the Form on `127.0.0.1:5001`, so only that computer can reach it. To let
+the network in, change the `PublishPort` line to `5001:5001` and `daemon-reload` again.
 
 ## Tests
 

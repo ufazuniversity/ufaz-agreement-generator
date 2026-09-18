@@ -1,0 +1,21 @@
+# The web Form as one service.  Works with `podman compose` (or `podman-compose`)
+# and with `docker compose`; both read the `Containerfile` next to this file.
+services:
+  form:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: ufaz-agreement-form
+    # Only this computer can reach it.  Use "5001:5001" to let the network in.
+    ports:
+      - "127.0.0.1:5001:5001"
+    # The server writes nothing, so the whole filesystem stays read-only.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    # Your own issuer defaults, instead of the bundled ones (see README, "Settings").
+    # volumes:
+    #   - ./config.json:/app/config.json:ro,Z
