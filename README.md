@@ -208,6 +208,26 @@ The production URL is open to anyone who has the link; there is no login. To lim
 members of the Vercel team, turn on *Settings → Deployment Protection → Vercel Authentication*
 for *All Deployments*.
 
+## 7. Or run the web Form in Docker
+
+`Dockerfile` builds a small image (about 90 MB) that serves the same Form on port 5001:
+
+```bash
+docker build -t ufaz-agreement-form .
+docker run --rm -p 5001:5001 ufaz-agreement-form
+```
+
+Open <http://127.0.0.1:5001>. Stop it with Ctrl+C.
+
+* The container writes nothing and keeps no PDFs: each one is built in memory and downloaded
+  by the browser. It runs as a normal user, not root.
+* To use your own issuer defaults, mount a settings file over the one the server reads:
+  `-v "$PWD/config.json:/app/config.json:ro"` (see [Settings](#settings)).
+* `-p 8080:5001` serves it on another port on your computer.
+* To keep the image small it holds only what the browser Form uses: the terminal Form
+  (`textual`) and Uvicorn's speed-ups are left out. The `Dockerfile` says which, and the build
+  stops if the server can no longer start without them.
+
 ## Tests
 
 ```bash

@@ -27,8 +27,10 @@ from datetime import datetime
 from pathlib import Path
 
 from .agreement import build_header_map, fill_pdf, pdf_filename, row_to_fields
-from .form import AgreementForm
 from .web import serve
+
+# .form is imported in main(), only when the terminal Form is asked for: a server that serves
+# the Form in the browser (app.py) needs neither it nor textual (see README, "in Docker").
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE = HERE / "template" / "UFAZ_IT_Device_Issuance_Agreement_Fillable.pdf"
@@ -139,6 +141,7 @@ def main(argv=None) -> int:
         serve(cfg, args.template, args.lock, args.host, args.port)
         return 0
     if args.input is None:
+        from .form import AgreementForm
         AgreementForm(cfg, args.template, args.output, args.lock).run()
         return 0
     return run_batch(args, cfg)
