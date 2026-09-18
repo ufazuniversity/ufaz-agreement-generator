@@ -15,7 +15,7 @@ ufaz-agreement-generator/
 ├── docs/adr/                   why some decisions were made
 ├── receivers_template.csv      CSV to fill in (headers + 2 sample rows)
 ├── app.py                      entry point for Vercel: serves the Form in the browser
-├── Containerfile               builds the ~90 MB image (`Dockerfile` is a link to it)
+├── Containerfile               builds the ~60 MB image (`Dockerfile` is a link to it)
 ├── compose.yaml                one service: the web Form (podman compose / docker compose)
 ├── deploy/                     systemd unit, so Podman keeps the Form running
 ├── src/ufaz_agreement_generator/
@@ -213,7 +213,8 @@ for *All Deployments*.
 
 ## 7. Or run the web Form in a container
 
-`Containerfile` builds a small image (about 90 MB) that serves the same Form on port 5001.
+`Containerfile` builds a small image (about 60 MB; Docker counts the same image as 90 MB)
+that serves the same Form on port 5001.
 It works with **Podman** and with **Docker** — the same commands, one word apart:
 
 ```bash
@@ -241,9 +242,15 @@ Open <http://127.0.0.1:5001>. Stop it with Ctrl+C.
 `compose.yaml` builds and runs the same service, locked down as above:
 
 ```bash
-podman compose up --build -d     # or: podman-compose up --build -d, docker compose up --build -d
+systemctl --user start podman.socket     # once per login; `podman compose` needs it
+podman compose up --build -d             # or: podman-compose …, docker compose …
 podman compose down
 ```
+
+`podman compose` passes the work to a compose tool it finds. Docker's compose plugin reaches
+Podman through that socket, and stops at *failed to connect to the docker API* without it;
+`podman-compose`, if you install that one instead, needs no socket. Use `systemctl --user
+enable --now podman.socket` to start it at every login.
 
 ### Keep it running with systemd (Podman)
 
@@ -259,8 +266,8 @@ systemctl --user start ufaz-agreement-form
 ```
 
 Check it with `systemctl --user status ufaz-agreement-form`, stop it with `systemctl --user
-stop ufaz-agreement-form`. Run `loginctl enable-linger $USER` once if it must also start when
-nobody is logged in.
+stop ufaz-agreement-form`; the container it runs is named `systemd-ufaz-agreement-form`. Run
+`loginctl enable-linger $USER` once if it must also start when nobody is logged in.
 
 The unit publishes the Form on `127.0.0.1:5001`, so only that computer can reach it. To let
 the network in, change the `PublishPort` line to `5001:5001` and `daemon-reload` again.
